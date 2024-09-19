@@ -4,7 +4,11 @@ using OpenAI_API;
 
 namespace AutoGpt;
 
-public class OpenAIClientFactory(IHttpClientFactory httpClientFactory)
+/// <summary>
+/// OpenAI API 客户端工厂
+/// </summary>
+/// <param name="httpClientFactory"></param>
+public sealed class OpenAIClientFactory(IHttpClientFactory httpClientFactory)
 {
     private readonly ConcurrentDictionary<string, Lazy<OpenAIAPI>> _clients = new();
 
@@ -12,12 +16,6 @@ public class OpenAIClientFactory(IHttpClientFactory httpClientFactory)
     {
         return _clients.GetOrAdd(apiKey, new Lazy<OpenAIAPI>(() =>
         {
-            // 如果_clients大于100个，就移除第一个
-            if (_clients.Count > 100)
-            {
-                _clients.TryRemove(_clients.Keys.First(), out _);
-            }
-
             var client = new OpenAIAPI(apiKey) { HttpClientFactory = httpClientFactory };
             return client;
         })).Value;

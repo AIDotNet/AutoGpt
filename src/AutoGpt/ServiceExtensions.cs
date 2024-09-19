@@ -18,6 +18,7 @@ public static class ServiceExtensions
         services.Configure(configure);
 
         services.AddScoped<AutoGptClient>();
+        
         services.AddHttpClient().ConfigureHttpClientDefaults((builder =>
         {
             builder.AddHttpMessageHandler((_) =>
