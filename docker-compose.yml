@@ -1,0 +1,6 @@
+﻿services:
+  autogpt.tests:
+    image: autogpt.tests
+    build:
+      context: .
+      dockerfile: src/AutoGpt.Tests/Dockerfile

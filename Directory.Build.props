@@ -1,0 +1,18 @@
+<Project>
+    <PropertyGroup>
+        <VersionSuffix>0</VersionSuffix>
+        <VersionPrefix>1.0</VersionPrefix>
+        <Version>$(VersionPrefix).$(VersionSuffix)</Version>
+        <Authors>AIDotNet</Authors>
+        <Company>AIDotNet</Company>
+        <Product>AIDotNet</Product>
+        <Title>AutoGpt</Title>
+        <Description> AutoGpt 智能推理SDK，利用AI本身的能力进行多次对话推理，回复效果更加理想，更智能。
+        </Description>
+        <PackageProjectUrl>https://github.com/AIDotNet/AutoGpt</PackageProjectUrl>
+        <PackageLicenseUrl>https://github.com/AIDotNet/AutoGpt/blob/main/LICENSE</PackageLicenseUrl>
+        <RepositoryUrl>https://github.com/AIDotNet/AutoGpt</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <AssemblyVersion>$(Version)</AssemblyVersion>
+    </PropertyGroup>
+</Project>
