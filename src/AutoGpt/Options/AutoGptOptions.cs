@@ -9,16 +9,6 @@ public class AutoGptOptions
     public string Endpoint { get; set; }
 
     /// <summary>
-    /// ApiKey
-    /// </summary>
-    public string ApiKey { get; set; }
-
-    /// <summary>
-    /// 对话模型
-    /// </summary>
-    public string Model { get; set; }
-
-    /// <summary>
     /// 推理次数
     /// </summary>
     public ushort NumOutputs { get; set; }
@@ -28,16 +18,6 @@ public class AutoGptOptions
         if (string.IsNullOrWhiteSpace(Endpoint))
         {
             throw new ArgumentNullException(nameof(Endpoint));
-        }
-
-        if (string.IsNullOrWhiteSpace(ApiKey))
-        {
-            throw new ArgumentNullException(nameof(ApiKey));
-        }
-
-        if (string.IsNullOrWhiteSpace(Model))
-        {
-            throw new ArgumentNullException(nameof(Model));
         }
         
         NumOutputs = NumOutputs == 0 ? (ushort)1 : NumOutputs;

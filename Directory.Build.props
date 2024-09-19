@@ -1,6 +1,6 @@
 <Project>
     <PropertyGroup>
-        <VersionSuffix>0</VersionSuffix>
+        <VersionSuffix>1</VersionSuffix>
         <VersionPrefix>1.0</VersionPrefix>
         <Version>$(VersionPrefix).$(VersionSuffix)</Version>
         <Authors>AIDotNet</Authors>

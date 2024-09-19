@@ -27,15 +27,7 @@ public static class ServiceExtensions
                 return handler;
             });
         }));
-        services.AddSingleton<OpenAIAPI>((provider =>
-        {
-            var httpClientFactory = provider.GetRequiredService<IHttpClientFactory>();
-            var client = new OpenAIAPI(options.ApiKey)
-            {
-                HttpClientFactory = httpClientFactory
-            };
-            return client;
-        }));
+        services.AddSingleton<OpenAIClientFactory>();
 
         return services;
     }

@@ -2,8 +2,11 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
 using AutoGpt.Options;
+
 using Microsoft.Extensions.Options;
+
 using OpenAI_API;
 using OpenAI_API.Chat;
 using OpenAI_API.Completions;
@@ -13,7 +16,7 @@ using OpenAI_API.Models;
 
 namespace AutoGpt;
 
-public class AutoGptClient(OpenAIAPI openAiApi, IOptions<AutoGptOptions> options)
+public class AutoGptClient(OpenAIClientFactory clientFactory, IOptions<AutoGptOptions> options)
 {
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
@@ -26,17 +29,16 @@ public class AutoGptClient(OpenAIAPI openAiApi, IOptions<AutoGptOptions> options
     private static readonly Dictionary<string, string> Prompt = new()
     {
         {
-            "system",
-            """
-            You are an expert AI assistant that explains your reasoning step by step. For each step, provide a title that describes what you're doing in that step, along with the content. Decide if you need another step or if you're ready to give the final answer. Respond in JSON format with 'title', 'content', and 'next_action' (either 'continue' or 'final_answer') keys. USE AS MANY REASONING STEPS AS POSSIBLE. AT LEAST 3. BE AWARE OF YOUR LIMITATIONS AS AN LLM AND WHAT YOU CAN AND CANNOT DO. IN YOUR REASONING, INCLUDE EXPLORATION OF ALTERNATIVE ANSWERS. CONSIDER YOU MAY BE WRONG, AND IF YOU ARE WRONG IN YOUR REASONING, WHERE IT WOULD BE. FULLY TEST ALL OTHER POSSIBILITIES. YOU CAN BE WRONG. WHEN YOU SAY YOU ARE RE-EXAMINING, ACTUALLY RE-EXAMINE, AND USE ANOTHER APPROACH TO DO SO. DO NOT JUST SAY YOU ARE RE-EXAMINING. USE AT LEAST 3 METHODS TO DERIVE THE ANSWER. USE BEST PRACTICES.
-            Do not output "{" and "}".
-            Example of a valid JSON response:
-            [{
-                "title": "Identifying Key Information",
-                "content": "To begin solving this problem, we need to carefully examine the given information and identify the crucial elements that will guide our solution process. This involves...",
-                "next_action": "continue"
-            }]
-            """
+            "system", """
+                      You are an expert AI assistant that explains your reasoning step by step. For each step, provide a title that describes what you're doing in that step, along with the content. Decide if you need another step or if you're ready to give the final answer. Respond in JSON format with 'title', 'content', and 'next_action' (either 'continue' or 'final_answer') keys. USE AS MANY REASONING STEPS AS POSSIBLE. AT LEAST 3. BE AWARE OF YOUR LIMITATIONS AS AN LLM AND WHAT YOU CAN AND CANNOT DO. IN YOUR REASONING, INCLUDE EXPLORATION OF ALTERNATIVE ANSWERS. CONSIDER YOU MAY BE WRONG, AND IF YOU ARE WRONG IN YOUR REASONING, WHERE IT WOULD BE. FULLY TEST ALL OTHER POSSIBILITIES. YOU CAN BE WRONG. WHEN YOU SAY YOU ARE RE-EXAMINING, ACTUALLY RE-EXAMINE, AND USE ANOTHER APPROACH TO DO SO. DO NOT JUST SAY YOU ARE RE-EXAMINING. USE AT LEAST 3 METHODS TO DERIVE THE ANSWER. USE BEST PRACTICES.
+                      Do not output "{" and "}".
+                      Example of a valid JSON response:
+                      [{
+                          "title": "Identifying Key Information",
+                          "content": "To begin solving this problem, we need to carefully examine the given information and identify the crucial elements that will guide our solution process. This involves...",
+                          "next_action": "continue"
+                      }]
+                      """
         },
         {
             "assistant",
@@ -48,10 +50,12 @@ public class AutoGptClient(OpenAIAPI openAiApi, IOptions<AutoGptOptions> options
     /// Generate response based on the chat history.
     /// </summary>
     /// <param name="prompt"></param>
+    /// <param name="model"></param>
     /// <param name="maxToken"></param>
+    /// <param name="apiKey"></param>
     /// <returns></returns>
     public async IAsyncEnumerable<(string title, string content, double thinkingTime)> GenerateResponseAsync(
-        string prompt, int maxToken = 800)
+        string prompt, string apiKey, string model, int maxToken = 800)
     {
         var chatHistory = new List<ChatMessage>();
         foreach (var item in Prompt)
@@ -78,7 +82,7 @@ public class AutoGptClient(OpenAIAPI openAiApi, IOptions<AutoGptOptions> options
         while (true)
         {
             startTime = DateTime.Now;
-            var stepData = await MakeApiCall(chatHistory, maxToken);
+            var stepData = await MakeApiCall(chatHistory, maxToken, apiKey, model);
             endTime = DateTime.Now;
             var thinkingTime = (endTime - startTime).TotalSeconds;
             totalThinkingTime += thinkingTime;
@@ -94,7 +98,7 @@ public class AutoGptClient(OpenAIAPI openAiApi, IOptions<AutoGptOptions> options
             chatHistory.Add(new ChatMessage(ChatMessageRole.Assistant,
                 JsonSerializer.Serialize(stepData, _jsonSerializerOptions)));
 
-            stepCount += 1;
+            stepCount += stepData.Count;
         }
 
         startTime = DateTime.Now;
@@ -109,7 +113,7 @@ public class AutoGptClient(OpenAIAPI openAiApi, IOptions<AutoGptOptions> options
 
         history.Add(new ChatMessage(ChatMessageRole.User, prompt));
 
-        await foreach (var content in MakeApiCallStreamAsync(history.ToArray(), maxToken))
+        await foreach (var content in MakeApiCallStreamAsync(history.ToArray(), maxToken, apiKey, model))
         {
             sb.Append(content);
             yield return ($"Final Answer", content, totalThinkingTime);
@@ -118,14 +122,14 @@ public class AutoGptClient(OpenAIAPI openAiApi, IOptions<AutoGptOptions> options
         totalThinkingTime += (endTime - startTime).TotalSeconds;
     }
 
-    private async IAsyncEnumerable<string> MakeApiCallStreamAsync(ChatMessage[] history, int maxToken)
+    private async IAsyncEnumerable<string> MakeApiCallStreamAsync(ChatMessage[] history, int maxToken, string apiKey,
+        string model)
     {
+        var openAiApi = clientFactory.CreateClient(apiKey);
+
         await foreach (var item in openAiApi.Chat.StreamChatEnumerableAsync(new ChatRequest()
                        {
-                           Messages = history,
-                           MaxTokens = maxToken,
-                           Model = options.Value.Model,
-                           Temperature = 0.2
+                           Messages = history, MaxTokens = maxToken, Model = model, Temperature = 0.2
                        }))
         {
             var content = item.Choices.FirstOrDefault()?.Message.TextContent ?? string.Empty;
@@ -134,9 +138,12 @@ public class AutoGptClient(OpenAIAPI openAiApi, IOptions<AutoGptOptions> options
         }
     }
 
-    public async Task<List<MakeResultDto>> MakeApiCall(List<ChatMessage> history, int maxToken,
+    public async Task<List<MakeResultDto>> MakeApiCall(List<ChatMessage> history, int maxToken, string apiKey,
+        string model,
         bool isFinalAnswer = false)
     {
+        var openAiApi = clientFactory.CreateClient(apiKey);
+        
         for (int attempt = 0; attempt < 3; attempt++)
         {
             try
@@ -146,7 +153,7 @@ public class AutoGptClient(OpenAIAPI openAiApi, IOptions<AutoGptOptions> options
                     {
                         Messages = history.ToArray(),
                         MaxTokens = maxToken,
-                        Model = options.Value.Model,
+                        Model = model,
                         //json数组
                         Temperature = 0.2
                     });
