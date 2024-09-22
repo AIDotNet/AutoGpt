@@ -422,8 +422,9 @@ https://open666.cn/ 已经接入了自动推理功能
 
 如果您想分享DotNet技术qq群：
 
-![图片](https://mmbiz.qpic.cn/mmbiz_png/CY59oiaHqeicSSun9579YVzqYAQbYoaEYYdDrKCy5lDpdicyeU4AOILH8ibYTk4SPkIhlibH3RxCM0MsTIBzx6I5cEw/640?wx_fmt=png&from=appmsg&tp=wxpic&wxfrom=5&wx_lazy=1&wx_co=1)
+<img height="160" src="https://mmbiz.qpic.cn/mmbiz_png/CY59oiaHqeicSSun9579YVzqYAQbYoaEYYdDrKCy5lDpdicyeU4AOILH8ibYTk4SPkIhlibH3RxCM0MsTIBzx6I5cEw/640?wx_fmt=png&from=appmsg&tp=wxpic&wxfrom=5&wx_lazy=1&wx_co=1">
 
 AIDotNet微信社区群：
 
-![图片](https://mmbiz.qpic.cn/mmbiz_png/CY59oiaHqeicSSun9579YVzqYAQbYoaEYY6zV3zpYpmw8MVXy5VoZydA6f0iaOFFfwaqNTsOTstfYFoktgpfg9g2w/640?wx_fmt=png&from=appmsg&tp=wxpic&wxfrom=5&wx_lazy=1&wx_co=1)
+<img height="160" src="https://mmbiz.qpic.cn/mmbiz_png/CY59oiaHqeicSSun9579YVzqYAQbYoaEYY6zV3zpYpmw8MVXy5VoZydA6f0iaOFFfwaqNTsOTstfYFoktgpfg9g2w/640?wx_fmt=png&from=appmsg&tp=wxpic&wxfrom=5&wx_lazy=1&wx_co=1">
+![图片]()
