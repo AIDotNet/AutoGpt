@@ -167,7 +167,7 @@ public class AutoGptClient(
                         Temperature = 0.2
                     });
                 
-                var content = response.Choices.FirstOrDefault()?.Message.TextContent ?? string.Empty;
+                var content = response?.Choices?.FirstOrDefault()?.Message.TextContent ?? string.Empty;
 
                 var result = JsonSerializer.Deserialize<List<MakeResultDto>>(content, _jsonSerializerOptions);
 
@@ -225,7 +225,7 @@ public class MakeResultDto
 
     [JsonPropertyName("next_action")] public string? NextAction { get; set; }
 
-    [JsonPropertyName("type")] public MakeResultType Type { get; set; }
+    [JsonPropertyName("type")] public MakeResultType? Type { get; set; }
 
     public enum MakeResultType
     {
