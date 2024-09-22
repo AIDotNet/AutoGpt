@@ -126,7 +126,7 @@ public class AutoGptClient(
         endTime = DateTime.Now;
         var sb = new StringBuilder();
 
-        var history = steps.Select(x => new ChatMessage(ChatMessageRole.Assistant, x.Content)).ToList();
+        var history = steps.Select(x => new ChatMessage(ChatMessageRole.Assistant, JsonSerializer.Serialize(x.Content, _jsonSerializerOptions))).ToList();
 
         history.Add(new ChatMessage(ChatMessageRole.User,
             "Please help the user give the best solution based on your reasoning above, if possible in as much detail as possible."));
