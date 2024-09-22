@@ -89,24 +89,36 @@ public class AutoGptClient(
             var thinkingTime = (endTime - startTime).TotalSeconds;
             totalThinkingTime += thinkingTime;
 
-            steps.AddRange(stepData);
 
-            foreach (MakeResultDto step in steps)
-            {
-                step.Type = MakeResultDto.MakeResultType.Step;
-                yield return step;
-            }
-
-            if (stepData.Any(x => x.NextAction == "final_answer") ||
-                stepCount > options.Value.NumOutputs) // Max number of steps
+            if (stepCount > options.Value.NumOutputs)
             {
                 break;
             }
 
+            if (stepData.Type == MakeResultDto.MakeResultType.Error)
+            {
+                steps.Add(new MakeResultDto($"Step {stepCount}: {stepData.Title}", stepData.Content, "error"));
+                break;
+            }
+
+            steps.Add(new MakeResultDto(stepData.Title, stepData.Content, stepData.NextAction));
+
             chatHistory.Add(new ChatMessage(ChatMessageRole.Assistant,
                 JsonSerializer.Serialize(stepData, _jsonSerializerOptions)));
 
-            stepCount += stepData.Count;
+            stepData.Title = $"Step {stepCount}: {stepData.Title}";
+
+            stepData.Type = MakeResultDto.MakeResultType.Step;
+            yield return stepData;
+
+
+            if (stepData.NextAction?.Equals("final_answer", StringComparison.OrdinalIgnoreCase) == true) // Max number of steps
+            {
+                break;
+            }
+
+
+            stepCount += 1;
         }
 
         startTime = DateTime.Now;
@@ -137,9 +149,12 @@ public class AutoGptClient(
         var openAiApi = clientFactory.CreateClient(apiKey);
 
         await foreach (var item in openAiApi.Chat.StreamChatEnumerableAsync(new ChatRequest()
-                       {
-                           Messages = history, MaxTokens = maxToken, Model = model, Temperature = 0.2
-                       }))
+        {
+            Messages = history,
+            MaxTokens = maxToken,
+            Model = model,
+            Temperature = 0.2
+        }))
         {
             var content = item.Choices.FirstOrDefault()?.Message.TextContent ?? string.Empty;
 
@@ -147,7 +162,7 @@ public class AutoGptClient(
         }
     }
 
-    public async Task<List<MakeResultDto>> MakeApiCall(List<ChatMessage> history, int maxToken, string apiKey,
+    public async Task<MakeResultDto> MakeApiCall(List<ChatMessage> history, int maxToken, string apiKey,
         string model,
         bool isFinalAnswer = false)
     {
@@ -164,12 +179,13 @@ public class AutoGptClient(
                         MaxTokens = maxToken,
                         Model = model,
                         //json数组
+                        ResponseFormat = ChatRequest.ResponseFormats.JsonObject,
                         Temperature = 0.2
                     });
-                
+
                 var content = response?.Choices?.FirstOrDefault()?.Message.TextContent ?? string.Empty;
 
-                var result = JsonSerializer.Deserialize<List<MakeResultDto>>(content, _jsonSerializerOptions);
+                var result = JsonSerializer.Deserialize<MakeResultDto>(content, _jsonSerializerOptions);
 
                 return result;
             }
@@ -179,21 +195,17 @@ public class AutoGptClient(
                 {
                     if (isFinalAnswer)
                     {
-                        return new List<MakeResultDto>
-                        {
-                            new("Error",
+                        return
+                            new MakeResultDto("Error",
                                 $"Failed to generate final answer after 3 attempts. Error: {e.Message}",
-                                "final_answer")
-                        };
+                                "final_answer", MakeResultDto.MakeResultType.Error);
                     }
                     else
                     {
-                        return new List<MakeResultDto>
-                        {
-                            new("Error",
+                        return
+                            new MakeResultDto("Error",
                                 $"Failed to generate response after 3 attempts. Error: {e.Message}",
-                                "continue")
-                        };
+                                "continue", MakeResultDto.MakeResultType.Error);
                     }
                 }
 
@@ -201,7 +213,8 @@ public class AutoGptClient(
             }
         }
 
-        return new List<MakeResultDto>();
+        return new MakeResultDto("Error", "Failed to generate response after 3 attempts.", "continue",
+            MakeResultDto.MakeResultType.Error);
     }
 }
 
@@ -238,6 +251,11 @@ public class MakeResultDto
         /// 继续
         /// </summary>
         Continue,
+
+        /// <summary>
+        /// 错误
+        /// </summary>
+        Error,
 
         /// <summary>
         /// 最终答案
