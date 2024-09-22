@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Text.Json;
 
 using AutoGpt;
 
@@ -14,20 +15,22 @@ var serviceProvider = service.BuildServiceProvider();
 var autoGptClient = serviceProvider.GetRequiredService<AutoGptClient>();
 
 var sw = Stopwatch.StartNew();
-await foreach (var (title, content, totalThinkingTime) in autoGptClient.GenerateResponseAsync(
-                   "c#使用Redis+RabbitMQ实现多级缓存", "sk-", "gpt-4o-mini-2024-07-18", 2000))
+await foreach (var make in autoGptClient.GenerateResponseAsync(
+                   "0.9 和0.11哪个大", "sk-m1kRV1B3CiXyysrtQq1AApdOEDRfIY68w5frAe", "gpt-4o-mini-2024-07-18",
+                   2000))
 {
-    if (title.StartsWith("Final Answer"))
+    if (make.Type == MakeResultDto.MakeResultType.FinalAnswer)
     {
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.Write(content);
+        Console.Write(make.Content);
 
         Console.ResetColor();
     }
     else
     {
-        Console.WriteLine(title);
-        Console.WriteLine(content);
+
+        Console.WriteLine("推理标题：" + make.Title);
+        Console.WriteLine("推理内容：" + make.Content);
     }
 }
 

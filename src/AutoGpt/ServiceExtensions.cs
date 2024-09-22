@@ -15,6 +15,8 @@ public static class ServiceExtensions
 
         options.Validate();
 
+        services.AddSingleton<IPromptManager, PromptManager>();
+
         services.Configure(configure);
 
         services.AddScoped<AutoGptClient>();

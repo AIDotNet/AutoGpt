@@ -16,7 +16,10 @@ using OpenAI_API.Models;
 
 namespace AutoGpt;
 
-public class AutoGptClient(OpenAIClientFactory clientFactory, IOptions<AutoGptOptions> options)
+public class AutoGptClient(
+    OpenAIClientFactory clientFactory,
+    IOptions<AutoGptOptions> options,
+    IPromptManager promptManager)
 {
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
@@ -26,44 +29,43 @@ public class AutoGptClient(OpenAIClientFactory clientFactory, IOptions<AutoGptOp
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    private static readonly Dictionary<string, string> Prompt = new()
+    /// <summary>
+    /// Generate response based on the prompt.
+    /// </summary>
+    /// <param name="prompt"></param>
+    /// <param name="apiKey"></param>
+    /// <param name="model"></param>
+    /// <param name="maxToken"></param>
+    /// <returns></returns>
+    public async IAsyncEnumerable<MakeResultDto> GenerateResponseAsync(
+        string prompt, string apiKey, string model, int maxToken = 800)
     {
+        var chat = new List<ChatMessage> { new ChatMessage(ChatMessageRole.User, prompt) };
+
+        await foreach (var item in GenerateResponseAsync(chat, apiKey, model, maxToken))
         {
-            "system", """
-                      You are an expert AI assistant that explains your reasoning step by step. For each step, provide a title that describes what you're doing in that step, along with the content. Decide if you need another step or if you're ready to give the final answer. Respond in JSON format with 'title', 'content', and 'next_action' (either 'continue' or 'final_answer') keys. USE AS MANY REASONING STEPS AS POSSIBLE. AT LEAST 3. BE AWARE OF YOUR LIMITATIONS AS AN LLM AND WHAT YOU CAN AND CANNOT DO. IN YOUR REASONING, INCLUDE EXPLORATION OF ALTERNATIVE ANSWERS. CONSIDER YOU MAY BE WRONG, AND IF YOU ARE WRONG IN YOUR REASONING, WHERE IT WOULD BE. FULLY TEST ALL OTHER POSSIBILITIES. YOU CAN BE WRONG. WHEN YOU SAY YOU ARE RE-EXAMINING, ACTUALLY RE-EXAMINE, AND USE ANOTHER APPROACH TO DO SO. DO NOT JUST SAY YOU ARE RE-EXAMINING. USE AT LEAST 3 METHODS TO DERIVE THE ANSWER. USE BEST PRACTICES.
-                      Do not output "{" and "}".
-                      Example of a valid JSON response:
-                      [{
-                          "title": "Identifying Key Information",
-                          "content": "To begin solving this problem, we need to carefully examine the given information and identify the crucial elements that will guide our solution process. This involves...",
-                          "next_action": "continue"
-                      }]
-                      """
-        },
-        {
-            "assistant",
-            "Thank you! I will now think step by step following my instructions, starting at the beginning after decomposing the problem."
+            yield return item;
         }
-    };
+    }
 
     /// <summary>
     /// Generate response based on the chat history.
     /// </summary>
-    /// <param name="prompt"></param>
     /// <param name="model"></param>
     /// <param name="maxToken"></param>
+    /// <param name="chatMessages"></param>
     /// <param name="apiKey"></param>
     /// <returns></returns>
-    public async IAsyncEnumerable<(string title, string content, double thinkingTime)> GenerateResponseAsync(
-        string prompt, string apiKey, string model, int maxToken = 800)
+    public async IAsyncEnumerable<MakeResultDto> GenerateResponseAsync(
+        List<ChatMessage> chatMessages, string apiKey, string model, int maxToken = 800)
     {
         var chatHistory = new List<ChatMessage>();
-        foreach (var item in Prompt)
+        foreach (var item in promptManager.Prompts)
         {
             chatHistory.Add(new ChatMessage(ChatMessageRole.FromString(item.Key), item.Value));
         }
 
-        chatHistory.Add(new ChatMessage(ChatMessageRole.User, prompt));
+        chatHistory.AddRange(chatMessages);
 
         var totalThinkingTime = 0.0;
         var steps = new List<MakeResultDto>();
@@ -89,6 +91,12 @@ public class AutoGptClient(OpenAIClientFactory clientFactory, IOptions<AutoGptOp
 
             steps.AddRange(stepData);
 
+            foreach (MakeResultDto step in steps)
+            {
+                step.Type = MakeResultDto.MakeResultType.Step;
+                yield return step;
+            }
+
             if (stepData.Any(x => x.NextAction == "final_answer") ||
                 stepCount > options.Value.NumOutputs) // Max number of steps
             {
@@ -111,12 +119,13 @@ public class AutoGptClient(OpenAIClientFactory clientFactory, IOptions<AutoGptOp
         history.Add(new ChatMessage(ChatMessageRole.User,
             "Please help the user give the best solution based on your reasoning above, if possible in as much detail as possible."));
 
-        history.Add(new ChatMessage(ChatMessageRole.User, prompt));
+        history.AddRange(chatMessages);
 
         await foreach (var content in MakeApiCallStreamAsync(history.ToArray(), maxToken, apiKey, model))
         {
             sb.Append(content);
-            yield return ($"Final Answer", content, totalThinkingTime);
+            yield return new MakeResultDto("Final Answer", content, "final_answer",
+                MakeResultDto.MakeResultType.FinalAnswer);
         }
 
         totalThinkingTime += (endTime - startTime).TotalSeconds;
@@ -143,7 +152,7 @@ public class AutoGptClient(OpenAIClientFactory clientFactory, IOptions<AutoGptOp
         bool isFinalAnswer = false)
     {
         var openAiApi = clientFactory.CreateClient(apiKey);
-        
+
         for (int attempt = 0; attempt < 3; attempt++)
         {
             try
@@ -157,8 +166,7 @@ public class AutoGptClient(OpenAIClientFactory clientFactory, IOptions<AutoGptOp
                         //json数组
                         Temperature = 0.2
                     });
-
-
+                
                 var content = response.Choices.FirstOrDefault()?.Message.TextContent ?? string.Empty;
 
                 var result = JsonSerializer.Deserialize<List<MakeResultDto>>(content, _jsonSerializerOptions);
@@ -173,7 +181,7 @@ public class AutoGptClient(OpenAIClientFactory clientFactory, IOptions<AutoGptOp
                     {
                         return new List<MakeResultDto>
                         {
-                            new MakeResultDto("Error",
+                            new("Error",
                                 $"Failed to generate final answer after 3 attempts. Error: {e.Message}",
                                 "final_answer")
                         };
@@ -203,11 +211,12 @@ public class MakeResultDto
     {
     }
 
-    public MakeResultDto(string title, string content, string nextAction)
+    public MakeResultDto(string title, string content, string nextAction, MakeResultType type = MakeResultType.Step)
     {
         Title = title;
         Content = content;
         NextAction = nextAction;
+        Type = type;
     }
 
     [JsonPropertyName("title")] public string? Title { get; set; }
@@ -215,4 +224,24 @@ public class MakeResultDto
     [JsonPropertyName("content")] public string? Content { get; set; }
 
     [JsonPropertyName("next_action")] public string? NextAction { get; set; }
+
+    [JsonPropertyName("type")] public MakeResultType Type { get; set; }
+
+    public enum MakeResultType
+    {
+        /// <summary>
+        /// 推理步骤
+        /// </summary>
+        Step = 1,
+
+        /// <summary>
+        /// 继续
+        /// </summary>
+        Continue,
+
+        /// <summary>
+        /// 最终答案
+        /// </summary>
+        FinalAnswer = 99
+    }
 }
