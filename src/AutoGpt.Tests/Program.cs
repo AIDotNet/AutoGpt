@@ -16,7 +16,7 @@ var autoGptClient = serviceProvider.GetRequiredService<AutoGptClient>();
 
 var sw = Stopwatch.StartNew();
 await foreach (var make in autoGptClient.GenerateResponseAsync(
-                   "使用c#设计工厂模式，并且给出代码案例", "sk-m1kRV1B3CiXyysrtQq1AApdOEDRfIY68w5frAe", "gpt-4o-mini-2024-07-18",
+                   "使用c#设计工厂模式，并且给出代码案例", "sk-", "gpt-4o-mini-2024-07-18",
                    2000))
 {
     if (make.Type == MakeResultDto.MakeResultType.FinalAnswer)
