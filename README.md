@@ -5,7 +5,6 @@
 
 AutoGpt 智能推理SDK，利用AI本身的能力进行多次对话推理，回复效果更加理想，更智能。
 
-[![][npm-release-shield]][npm-release-link]
 [![][github-releasedate-shield]][github-releasedate-link]<br/>
 [![][github-contributors-shield]][github-contributors-link]
 [![][github-forks-shield]][github-forks-link]
@@ -19,8 +18,6 @@ AutoGpt 智能推理SDK，利用AI本身的能力进行多次对话推理，回�
 
 </div>
 
-[npm-release-shield]: https://img.shields.io/npm/v/@lobehub/chat?color=369eff&labelColor=black&logo=npm&logoColor=white&style=plastic
-[npm-release-link]: https://www.npmjs.com/package/@lobehub/chat
 [github-releasedate-shield]: https://img.shields.io/github/release-date/AIDotNet/AutoGpt?color=black&labelColor=black&style=plastic
 [github-releasedate-link]: https://github.com/AIDotNet/AutoGpt/releases
 [github-contributors-shield]: https://img.shields.io/github/contributors/AIDotNet/AutoGpt?color=c4f042&labelColor=black&style=plastic
