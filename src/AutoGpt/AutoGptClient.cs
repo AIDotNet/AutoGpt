@@ -38,11 +38,11 @@ public class AutoGptClient(
     /// <param name="maxToken"></param>
     /// <returns></returns>
     public async IAsyncEnumerable<MakeResultDto> GenerateResponseAsync(
-        string prompt, string apiKey, string model, int maxToken = 800)
+        string prompt, string apiKey, string model, int maxToken = 800, double? temperature = null)
     {
         var chat = new List<ChatMessage> { new ChatMessage(ChatMessageRole.User, prompt) };
 
-        await foreach (var item in GenerateResponseAsync(chat, apiKey, model, maxToken))
+        await foreach (var item in GenerateResponseAsync(chat, apiKey, model, maxToken, temperature))
         {
             yield return item;
         }
@@ -57,7 +57,7 @@ public class AutoGptClient(
     /// <param name="apiKey"></param>
     /// <returns></returns>
     public async IAsyncEnumerable<MakeResultDto> GenerateResponseAsync(
-        List<ChatMessage> chatMessages, string apiKey, string model, int maxToken = 800)
+        List<ChatMessage> chatMessages, string apiKey, string model, int maxToken = 800, double? temperature = null)
     {
         var chatHistory = new List<ChatMessage>();
         foreach (var item in promptManager.Prompts)
@@ -73,18 +73,19 @@ public class AutoGptClient(
         DateTime startTime;
         DateTime endTime;
 
-        // 计算一个合理的最大tokn
-        var makeMaxToken = maxToken / 2;
+        // MrYSeven 20240923 这里看到暂时没使用 先注释
+        // 计算一个合理的最大token
+        //var makeMaxToken = maxToken / 2;
 
-        if (makeMaxToken < 800)
-        {
-            makeMaxToken = 800;
-        }
+        //if (makeMaxToken < 800)
+        //{
+        //    makeMaxToken = 800;
+        //}
 
         while (true)
         {
             startTime = DateTime.Now;
-            var stepData = await MakeApiCall(chatHistory, maxToken, apiKey, model);
+            var stepData = await MakeApiCall(chatHistory, maxToken, apiKey, model, temperature: temperature);
             endTime = DateTime.Now;
             var thinkingTime = (endTime - startTime).TotalSeconds;
             totalThinkingTime += thinkingTime;
@@ -112,7 +113,7 @@ public class AutoGptClient(
             yield return stepData;
 
 
-            if (stepData.NextAction?.Equals("final_answer", StringComparison.OrdinalIgnoreCase) == true) // Max number of steps
+            if (stepData.NextAction?.Equals(MakeResultDto.FinalAnswerKey, StringComparison.OrdinalIgnoreCase) == true) // Max number of steps
             {
                 break;
             }
@@ -133,30 +134,24 @@ public class AutoGptClient(
 
         history.AddRange(chatMessages);
 
-        await foreach (var content in MakeApiCallStreamAsync(history.ToArray(), maxToken, apiKey, model))
+        await foreach (var content in MakeApiCallStreamAsync(history, maxToken, apiKey, model, temperature))
         {
             sb.Append(content);
-            yield return new MakeResultDto("Final Answer", content, "final_answer",
+            yield return new MakeResultDto("Final Answer", content, MakeResultDto.FinalAnswerKey,
                 MakeResultDto.MakeResultType.FinalAnswer);
         }
 
         totalThinkingTime += (endTime - startTime).TotalSeconds;
     }
 
-    private async IAsyncEnumerable<string> MakeApiCallStreamAsync(ChatMessage[] history, int maxToken, string apiKey,
-        string model)
+    private async IAsyncEnumerable<string> MakeApiCallStreamAsync(IList<ChatMessage> history, int maxToken, string apiKey,
+        string model, double? temperature = null)
     {
         var openAiApi = clientFactory.CreateClient(apiKey);
 
-        await foreach (var item in openAiApi.Chat.StreamChatEnumerableAsync(new ChatRequest()
+        await foreach (var item in openAiApi.Chat.StreamChatEnumerableAsync(BuildChatRequest(history, maxToken, model, temperature)))
         {
-            Messages = history,
-            MaxTokens = maxToken,
-            Model = model,
-            Temperature = 0.2
-        }))
-        {
-            var content = item.Choices.FirstOrDefault()?.Message.TextContent ?? string.Empty;
+            var content = item.Choices.FirstOrDefault()?.Delta.TextContent ?? string.Empty;
 
             yield return content;
         }
@@ -164,7 +159,7 @@ public class AutoGptClient(
 
     public async Task<MakeResultDto> MakeApiCall(List<ChatMessage> history, int maxToken, string apiKey,
         string model,
-        bool isFinalAnswer = false)
+        bool isFinalAnswer = false, double? temperature = null /* 加在后面避免影响原有的顺序*/ )
     {
         var openAiApi = clientFactory.CreateClient(apiKey);
 
@@ -173,15 +168,7 @@ public class AutoGptClient(
             try
             {
                 var response =
-                    await openAiApi.Chat.CreateChatCompletionAsync(new ChatRequest()
-                    {
-                        Messages = history.ToArray(),
-                        MaxTokens = maxToken,
-                        Model = model,
-                        //json数组
-                        ResponseFormat = ChatRequest.ResponseFormats.JsonObject,
-                        Temperature = 0.2
-                    });
+                    await openAiApi.Chat.CreateChatCompletionAsync(BuildChatRequest(history, maxToken, model, temperature));
 
                 var content = response?.Choices?.FirstOrDefault()?.Message.TextContent ?? string.Empty;
 
@@ -198,7 +185,7 @@ public class AutoGptClient(
                         return
                             new MakeResultDto("Error",
                                 $"Failed to generate final answer after 3 attempts. Error: {e.Message}",
-                                "final_answer", MakeResultDto.MakeResultType.Error);
+                                MakeResultDto.FinalAnswerKey, MakeResultDto.MakeResultType.Error);
                     }
                     else
                     {
@@ -216,6 +203,42 @@ public class AutoGptClient(
         return new MakeResultDto("Error", "Failed to generate response after 3 attempts.", "continue",
             MakeResultDto.MakeResultType.Error);
     }
+
+    #region 内部处理
+
+    /// <summary>
+    /// 构建ChatMessage
+    /// </summary>
+    /// <param name="history"></param>
+    /// <param name="maxToken"></param>
+    /// <param name="model"></param>
+    /// <param name="temperature"></param>
+    /// <returns></returns>
+    private ChatRequest BuildChatRequest(IList<ChatMessage> history, int maxToken, string model, double? temperature = null)
+    {
+        if (!temperature.HasValue)
+        {
+            temperature = options.Value.Temperature;
+        }
+
+        return new ChatRequest()
+        {
+            Messages = history.ToArray(),
+            MaxTokens = maxToken,
+            Model = model,
+            //json数组
+            ResponseFormat = ChatRequest.ResponseFormats.JsonObject,
+            Temperature = temperature,
+            TopP = options.Value.TopP,
+            NumChoicesPerMessage = options.Value.NumChoicesPerMessage,
+            MultipleStopSequences = options.Value.MultipleStopSequences,
+            FrequencyPenalty = options.Value.FrequencyPenalty,
+            PresencePenalty = options.Value.PresencePenalty,
+            LogitBias = options.Value.LogitBias
+        };
+    }
+
+    #endregion 内部处理
 }
 
 public class MakeResultDto
@@ -262,4 +285,6 @@ public class MakeResultDto
         /// </summary>
         FinalAnswer = 99
     }
+
+    public static string FinalAnswerKey => "final_answer";
 }
