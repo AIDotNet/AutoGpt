@@ -1,22 +1,30 @@
-﻿using System.Collections.Concurrent;
+﻿using System.ClientModel;
+using System.Collections.Concurrent;
 
-using OpenAI_API;
+using AutoGpt.Options;
+
+using Microsoft.Extensions.Options;
+
+using OpenAI;
+using OpenAI.Chat;
 
 namespace AutoGpt;
 
 /// <summary>
 /// OpenAI API 客户端工厂
 /// </summary>
-/// <param name="httpClientFactory"></param>
-public sealed class OpenAIClientFactory(IHttpClientFactory httpClientFactory)
+public sealed class OpenAiClientFactory(IOptions<AutoGptOptions> options) : IClientFactory
 {
-    private readonly ConcurrentDictionary<string, Lazy<OpenAIAPI>> _clients = new();
+    private readonly ConcurrentDictionary<string, Lazy<ChatClient>> _clients = new();
 
-    public OpenAIAPI CreateClient(string apiKey)
+    private readonly string _endpoint = options.Value.Endpoint.TrimEnd('/') + "/v1";
+
+    public ChatClient CreateClient(string model, string apiKey)
     {
-        return _clients.GetOrAdd(apiKey, new Lazy<OpenAIAPI>(() =>
+        return _clients.GetOrAdd(model + apiKey, new Lazy<ChatClient>(() =>
         {
-            var client = new OpenAIAPI(apiKey) { HttpClientFactory = httpClientFactory };
+            var client = new ChatClient(model: model, new ApiKeyCredential(apiKey),
+                new OpenAIClientOptions() { Endpoint = new Uri(_endpoint) });
             return client;
         })).Value;
     }
