@@ -33,13 +33,15 @@ public class AutoGptClient(
     /// <param name="apiKey"></param>
     /// <param name="model"></param>
     /// <param name="maxToken"></param>
+    /// <param name="promptHandler">提示词处理回调</param>
     /// <returns></returns>
     public async IAsyncEnumerable<MakeResultDto> GenerateResponseAsync(
-        string prompt, string apiKey, string model, int maxToken = 800, float? temperature = null)
+        string prompt, string apiKey, string model, int maxToken = 800, float? temperature = null,
+        Action<Dictionary<string, string>>? promptHandler = null)
     {
         var chat = new List<ChatMessage> { ChatMessage.CreateUserMessage(prompt) };
 
-        await foreach (var item in GenerateResponseAsync(chat, apiKey, model, maxToken, temperature))
+        await foreach (var item in GenerateResponseAsync(chat, apiKey, model, maxToken, temperature,promptHandler))
         {
             yield return item;
         }
@@ -55,9 +57,13 @@ public class AutoGptClient(
     /// <param name="temperature"></param>
     /// <returns></returns>
     public async IAsyncEnumerable<MakeResultDto> GenerateResponseAsync(
-        List<ChatMessage> chatMessages, string apiKey, string model, int maxToken = 800, float? temperature = null)
+        List<ChatMessage> chatMessages, string apiKey, string model, int maxToken = 800, float? temperature = null,
+        Action<Dictionary<string, string>>? promptHandler = null)
     {
         var chatHistory = new List<ChatMessage>();
+
+        promptHandler?.Invoke(promptManager.Prompts);
+
         foreach (var item in promptManager.Prompts)
         {
             switch (item.Key)
