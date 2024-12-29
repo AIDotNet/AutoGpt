@@ -32,7 +32,11 @@ public class AzureOpenAIClientFactory(IOptions<AutoGptOptions> options) : IClien
     {
         return _azureClients.GetOrAdd(apiKey,
                 new Lazy<AzureOpenAIClient>(() =>
-                    new AzureOpenAIClient(new Uri(_endpoint), new ApiKeyCredential(apiKey))))
+                {
+                    var client =
+                        new AzureOpenAIClient(new Uri(_endpoint), new ApiKeyCredential(apiKey));
+                    return client;
+                }))
             .Value;
     }
 }

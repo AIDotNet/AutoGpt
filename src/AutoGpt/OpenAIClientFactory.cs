@@ -24,7 +24,7 @@ public sealed class OpenAiClientFactory(IOptions<AutoGptOptions> options) : ICli
         return _clients.GetOrAdd(model + apiKey, new Lazy<ChatClient>(() =>
         {
             var client = new ChatClient(model: model, new ApiKeyCredential(apiKey),
-                new OpenAIClientOptions() { Endpoint = new Uri(_endpoint) });
+                new OpenAIClientOptions() { Endpoint = new Uri(_endpoint) ,OrganizationId = "auto-gpt"});
             return client;
         })).Value;
     }
