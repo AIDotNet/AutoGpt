@@ -6,32 +6,9 @@ namespace AutoGpt;
 
 public static class ServiceExtensions
 {
-    /// <summary>
-    /// 添加 OpenAI 服务
-    /// </summary>
-    /// <param name="services"></param>
-    /// <param name="configure"></param>
-    /// <returns></returns>
-    public static IServiceCollection AddOpenAI(this IServiceCollection services, Action<AutoGptOptions> configure)
-    {
-        services.AddAutoGpt(configure);
-
-        services.AddSingleton<IClientFactory, OpenAiClientFactory>();
-
-        return services;
-    }
-
-    public static IServiceCollection AddAzureOpenAI(this IServiceCollection services, Action<AutoGptOptions> configure)
-    {
-        services.AddAutoGpt(configure);
-
-        services.AddSingleton<IClientFactory, AzureOpenAIClientFactory>();
-
-        return services;
-    }
-
-
-    private static IServiceCollection AddAutoGpt(this IServiceCollection services, Action<AutoGptOptions> configure)
+    public static IServiceCollection AddAutoGpt(this IServiceCollection services,
+        Action<AutoGptOptions> configure,
+        ServiceLifetime serviceLifetime = ServiceLifetime.Scoped)
     {
         var options = new AutoGptOptions();
 
@@ -43,11 +20,22 @@ public static class ServiceExtensions
 
         services.AddSingleton<IPromptManager, PromptManager>();
 
-        services.AddScoped<AutoGptClient>();
+        switch (serviceLifetime)
+        {
+            case ServiceLifetime.Singleton:
+                services.AddSingleton<AutoGptClient>();
+                break;
+            case ServiceLifetime.Scoped:
+                services.AddScoped<AutoGptClient>();
+                break;
+            case ServiceLifetime.Transient:
+                services.AddTransient<AutoGptClient>();
+                break;
+        }
+
 
         services.AddHttpClient();
 
-        services.AddSingleton<OpenAiClientFactory>();
         return services;
     }
 }

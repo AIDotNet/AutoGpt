@@ -1,6 +1,6 @@
 <Project>
     <PropertyGroup>
-        <VersionSuffix>10</VersionSuffix>
+        <VersionSuffix>11</VersionSuffix>
         <VersionPrefix>1.0</VersionPrefix>
         <Version>$(VersionPrefix).$(VersionSuffix)</Version>
         <Authors>AIDotNet</Authors>
@@ -13,5 +13,9 @@
         <RepositoryUrl>https://github.com/AIDotNet/AutoGpt</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <AssemblyVersion>$(Version)</AssemblyVersion>
+
+        <MicrosoftVersion Condition="'$(TargetFramework)' == 'net8.0'">8.0.0</MicrosoftVersion>
+        <MicrosoftVersion Condition="'$(TargetFramework)' == 'net9.0'">9.0.0</MicrosoftVersion>
+        
     </PropertyGroup>
 </Project>

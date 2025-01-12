@@ -6,16 +6,21 @@ using System.Text.Json.Serialization;
 using AutoGpt.Options;
 
 using Microsoft.Extensions.Options;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Connectors.OpenAI;
 
 using OpenAI.Chat;
+
+using ChatMessageContent = Microsoft.SemanticKernel.ChatMessageContent;
 
 #pragma warning disable SKEXP0010
 
 namespace AutoGpt;
 
 public class AutoGptClient(
-    IClientFactory clientFactory,
     IOptions<AutoGptOptions> options,
+    Kernel kernel,
     IPromptManager promptManager)
 {
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
@@ -30,18 +35,21 @@ public class AutoGptClient(
     /// Generate response based on the prompt.
     /// </summary>
     /// <param name="prompt"></param>
-    /// <param name="apiKey"></param>
-    /// <param name="model"></param>
     /// <param name="maxToken"></param>
+    /// <param name="temperature"></param>
     /// <param name="promptHandler">提示词处理回调</param>
+    /// <param name="clientKernel"></param>
     /// <returns></returns>
     public async IAsyncEnumerable<MakeResultDto> GenerateResponseAsync(
-        string prompt, string apiKey, string model, int maxToken = 800, float? temperature = null,
-        Action<Dictionary<string, string>>? promptHandler = null)
+        string prompt, int maxToken = 800, float? temperature = null,
+        Action<Dictionary<string, string>>? promptHandler = null, Kernel? clientKernel = null)
     {
-        var chat = new List<ChatMessage> { ChatMessage.CreateUserMessage(prompt) };
+        var chat = new List<ChatMessageContent>
+        {
+            new() { Content = prompt, Encoding = Encoding.UTF8, Role = AuthorRole.User }
+        };
 
-        await foreach (var item in GenerateResponseAsync(chat, apiKey, model, maxToken, temperature,promptHandler))
+        await foreach (var item in GenerateResponseAsync(chat, maxToken, temperature, promptHandler, clientKernel))
         {
             yield return item;
         }
@@ -50,17 +58,19 @@ public class AutoGptClient(
     /// <summary>
     /// Generate response based on the chat history.
     /// </summary>
-    /// <param name="model"></param>
     /// <param name="maxToken"></param>
     /// <param name="chatMessages"></param>
-    /// <param name="apiKey"></param>
     /// <param name="temperature"></param>
+    /// <param name="promptHandler"></param>
+    /// <param name="clientKernel"></param>
     /// <returns></returns>
     public async IAsyncEnumerable<MakeResultDto> GenerateResponseAsync(
-        List<ChatMessage> chatMessages, string apiKey, string model, int maxToken = 800, float? temperature = null,
-        Action<Dictionary<string, string>>? promptHandler = null)
+        List<ChatMessageContent> chatMessages, int maxToken = 800,
+        float? temperature = null,
+        Action<Dictionary<string, string>>? promptHandler = null,
+        Kernel? clientKernel = null)
     {
-        var chatHistory = new List<ChatMessage>();
+        var chatHistory = new ChatHistory();
 
         promptHandler?.Invoke(promptManager.Prompts);
 
@@ -69,16 +79,16 @@ public class AutoGptClient(
             switch (item.Key)
             {
                 case "user":
-                    chatHistory.Add(ChatMessage.CreateUserMessage(item.Value));
+                    chatHistory.AddUserMessage(item.Value);
                     break;
                 case "assistant":
-                    chatHistory.Add(ChatMessage.CreateAssistantMessage(item.Value));
+                    chatHistory.AddAssistantMessage(item.Value);
                     break;
                 case "system":
-                    chatHistory.Add(ChatMessage.CreateSystemMessage(item.Value));
+                    chatHistory.AddSystemMessage(item.Value);
                     break;
                 case "tool":
-                    chatHistory.Add(ChatMessage.CreateToolMessage(item.Value));
+                    chatHistory.Add(new ChatMessageContent(AuthorRole.Tool, item.Value));
                     break;
             }
         }
@@ -103,7 +113,7 @@ public class AutoGptClient(
         while (true)
         {
             startTime = DateTime.Now;
-            var stepData = await MakeApiCall(chatHistory, maxToken, apiKey, model);
+            var stepData = await MakeApiCall(chatHistory, maxToken, false, temperature, clientKernel);
             endTime = DateTime.Now;
             var thinkingTime = (endTime - startTime).TotalSeconds;
             totalThinkingTime += thinkingTime;
@@ -122,8 +132,7 @@ public class AutoGptClient(
 
             steps.Add(new MakeResultDto(stepData.Title, stepData.Content, stepData.NextAction));
 
-            chatHistory.Add(ChatMessage.CreateAssistantMessage(
-                JsonSerializer.Serialize(stepData, _jsonSerializerOptions)));
+            chatHistory.AddAssistantMessage(JsonSerializer.Serialize(stepData, _jsonSerializerOptions));
 
             stepData.Title = $"Step {stepCount}: {stepData.Title}";
 
@@ -146,17 +155,43 @@ public class AutoGptClient(
         endTime = DateTime.Now;
         var sb = new StringBuilder();
 
-        var history = steps.Select(x =>
-                (ChatMessage)ChatMessage.CreateAssistantMessage(JsonSerializer.Serialize(x.Content,
-                    _jsonSerializerOptions)))
-            .ToList();
+        var history = new ChatHistory();
 
-        history.Add(ChatMessage.CreateUserMessage(
-            "Please help the user give the best solution based on your reasoning above, if possible in as much detail as possible."));
+        foreach (MakeResultDto step in steps)
+        {
+            if (!string.IsNullOrWhiteSpace(step.Content))
+            {
+                history.AddAssistantMessage(step.Content);
+            }
+        }
 
-        history.AddRange(chatMessages);
+        history.AddUserMessage(
+            """
+            Based on all our previous reasoning and analysis, please provide a comprehensive final solution that:
+            
+            1. Naturally flows from our previous thinking steps
+            2. Shows how each reasoning path contributed to our understanding
+            3. Explains how we arrived at this conclusion
+            4. Addresses any concerns or limitations we discovered
+            5. Provides practical, actionable guidance
+            
+            Remember to:
+            - Build upon insights from each previous step
+            - Keep explanations clear and natural
+            - Focus on what matters most to solve the problem
+            - Use appropriate level of detail based on the user's needs
+            - Connect everything back to the original question
+            
+            Your response should feel like a natural conclusion to our thought process, not a structured template.
+            
+            """);
 
-        await foreach (var content in MakeApiCallStreamAsync(history, maxToken, apiKey, model, temperature))
+        foreach (var message in chatMessages)
+        {
+            history.Add(message);
+        }
+
+        await foreach (var content in MakeApiCallStreamAsync(history, maxToken, temperature, clientKernel))
         {
             sb.Append(content);
             yield return new MakeResultDto("Final Answer", content, MakeResultDto.FinalAnswerKey,
@@ -166,54 +201,55 @@ public class AutoGptClient(
         totalThinkingTime += (endTime - startTime).TotalSeconds;
     }
 
-    private async IAsyncEnumerable<string> MakeApiCallStreamAsync(IList<ChatMessage> history, int maxToken,
-        string apiKey,
-        string model, float? temperature = null)
+    private async IAsyncEnumerable<string> MakeApiCallStreamAsync(ChatHistory history, int maxToken,
+        float? temperature = null,
+        Kernel? clientKernel = null)
     {
-        var openAiApi = clientFactory.CreateClient(model, apiKey);
+        IChatCompletionService chatCompletionService = clientKernel != null
+            ? clientKernel.GetRequiredService<IChatCompletionService>()
+            : kernel.GetRequiredService<IChatCompletionService>();
 
-        await foreach (var streamingChatUpdate in openAiApi.CompleteChatStreamingAsync(history,
-                           new ChatCompletionOptions()
+
+        await foreach (var streamingChatUpdate in chatCompletionService.GetStreamingChatMessageContentsAsync(history,
+                           new OpenAIPromptExecutionSettings()
                            {
                                Temperature = temperature,
-                               MaxOutputTokenCount = maxToken,
+                               MaxTokens = maxToken,
                                TopP = options.Value.TopP,
-                               LogitBiases = { options.Value.LogitBias },
+                               // LogitBiases = { options.Value.LogitBias },
                                FrequencyPenalty = options.Value.FrequencyPenalty,
                                PresencePenalty = options.Value.PresencePenalty,
                            }))
         {
-            foreach (ChatMessageContentPart contentPart in streamingChatUpdate.ContentUpdate)
-            {
-                yield return contentPart.Text;
-            }
+            yield return streamingChatUpdate.Content ?? string.Empty;
         }
     }
 
-    public async Task<MakeResultDto> MakeApiCall(List<ChatMessage> history, int maxToken, string apiKey,
-        string model,
-        bool isFinalAnswer = false, float? temperature = null /* 加在后面避免影响原有的顺序*/)
+    public async Task<MakeResultDto> MakeApiCall(ChatHistory history, int maxToken,
+        bool isFinalAnswer = false, float? temperature = null, Kernel? clientKernel = null)
     {
-        var openAiApi = clientFactory.CreateClient(model, apiKey);
+        IChatCompletionService chatCompletionService = clientKernel != null
+            ? clientKernel.GetRequiredService<IChatCompletionService>()
+            : kernel.GetRequiredService<IChatCompletionService>();
 
         for (int attempt = 0; attempt < 3; attempt++)
         {
             try
             {
                 var response =
-                    await openAiApi.CompleteChatAsync(history,
-                        new ChatCompletionOptions()
-                        {
-                            ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat(),
-                            Temperature = temperature,
-                            MaxOutputTokenCount = maxToken,
-                            TopP = options.Value.TopP,
-                            LogitBiases = { options.Value.LogitBias },
-                            FrequencyPenalty = options.Value.FrequencyPenalty,
-                            PresencePenalty = options.Value.PresencePenalty,
-                        });
+                    await chatCompletionService.GetChatMessageContentAsync(history, new OpenAIPromptExecutionSettings()
+                    {
+                        ResponseFormat = typeof(MakeResultDto),
+                        // ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat(),
+                        Temperature = temperature,
+                        MaxTokens = maxToken,
+                        TopP = options.Value.TopP,
+                        // LogitBiases = { options.Value.LogitBias },
+                        FrequencyPenalty = options.Value.FrequencyPenalty,
+                        PresencePenalty = options.Value.PresencePenalty,
+                    });
 
-                var content = response.Value.Content.FirstOrDefault()?.Text;
+                var content = response.Content;
 
                 var result = JsonSerializer.Deserialize<MakeResultDto>(content, _jsonSerializerOptions);
 
